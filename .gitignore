@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Configuration
+config.py
+.env
+*.env
+
+# Google credentials
+google-credentials.json
+credentials.json
+*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
