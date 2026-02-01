@@ -21,6 +21,7 @@ class OrderForm(StatesGroup):
 	file = State()
 	hosting = State()
 	use_bonus = State()
+	confirm = State()
 
 
 class StatusForm(StatesGroup):
