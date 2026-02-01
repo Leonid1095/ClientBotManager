@@ -23,6 +23,27 @@ from calc import calculate_price
 from data import save_ticket, get_ticket_status, TICKETS_DB, REFERRALS_DB, BONUSES_DB
 from backup import BackupManager
 
+# Значения по умолчанию для параметров бекапа (если не определены в config.py)
+try:
+    BACKUP_ENABLED
+except NameError:
+    BACKUP_ENABLED = True
+
+try:
+    BACKUP_INTERVAL_DAYS
+except NameError:
+    BACKUP_INTERVAL_DAYS = 7
+
+try:
+    BACKUP_DIR
+except NameError:
+    BACKUP_DIR = "backups"
+
+try:
+    BACKUP_KEEP_COUNT
+except NameError:
+    BACKUP_KEEP_COUNT = 10
+
 # Настройка логирования (красивый формат)
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
