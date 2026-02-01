@@ -22,6 +22,8 @@ from reviews import REVIEWS, PENDING_REVIEWS, get_rating_stars
 from calc import calculate_price
 from data import save_ticket, get_ticket_status, TICKETS_DB, REFERRALS_DB, BONUSES_DB
 from backup import BackupManager
+from content_manager import content_manager
+from admin_panel import register_admin_handlers
 
 # Значения по умолчанию для параметров бекапа (если не определены в config.py)
 try:
@@ -184,7 +186,12 @@ async def handle_inline_menu(callback_query: types.CallbackQuery):
 @dp.message_handler(lambda m: m.text == PORTFOLIO_TEXT)
 async def handle_portfolio(message: types.Message):
     """Показ портфолио с кнопками для просмотра кейсов"""
-    for case in PORTFOLIO:
+    portfolio = content_manager.get_portfolio()
+    if not portfolio:
+        await message.answer("❌ Портфолио пусто", reply_markup=get_back_keyboard())
+        return
+    
+    for case in portfolio:
         kb = InlineKeyboardMarkup().add(
             InlineKeyboardButton("Посмотреть кейс", callback_data=f"case_{case['id']}")
         )
@@ -196,7 +203,8 @@ async def handle_portfolio(message: types.Message):
 async def show_case_details(callback_query: types.CallbackQuery):
     """Показ подробностей кейса"""
     case_id = callback_query.data.split('_')[1]
-    case = next((c for c in PORTFOLIO if c['id'] == case_id), None)
+    portfolio = content_manager.get_portfolio()
+    case = next((c for c in portfolio if c['id'] == case_id), None)
     if case:
         await callback_query.message.answer(
             f"<b>{case['title']}</b>\n{case['details']}", 
@@ -208,8 +216,13 @@ async def show_case_details(callback_query: types.CallbackQuery):
 @dp.message_handler(lambda m: m.text == FAQ_TEXT)
 async def handle_faq(message: types.Message):
     """Показ часто задаваемых вопросов"""
+    faq = content_manager.get_faq()
+    if not faq:
+        await message.answer("❌ FAQ пусто", reply_markup=get_back_keyboard())
+        return
+    
     text = "<b>FAQ — Часто задаваемые вопросы:</b>\n"
-    for item in FAQ_LIST:
+    for item in faq:
         text += f"\n<b>Q:</b> {item['q']}\n<b>A:</b> {item['a']}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=get_back_keyboard())
 
@@ -226,11 +239,9 @@ async def handle_support(message: types.Message):
 @dp.message_handler(lambda m: m.text == ABOUT_TEXT)
 async def handle_about(message: types.Message):
     """Информация о компании"""
+    about_text = content_manager.get_about()
     await message.answer(
-        "👤 <b>О себе</b>\n"
-        "Я — разработчик Telegram-ботов с опытом 3+ года. "
-        "Более 50 реализованных проектов для бизнеса и частных лиц.\n\n"
-        "Портфолио и отзывы доступны в соответствующих разделах.",
+        about_text,
         parse_mode="HTML",
         reply_markup=get_back_keyboard()
     )
@@ -239,13 +250,19 @@ async def handle_about(message: types.Message):
 @dp.message_handler(lambda m: m.text == CONTACT_TEXT)
 async def handle_contact_dev(message: types.Message):
     """Контакты разработчика"""
-    await message.answer(
-        "📞 <b>Контакты</b>\n"
-        "Telegram: @ваш_ник\n"
-        "Email: email@example.com",
-        parse_mode="HTML",
-        reply_markup=get_back_keyboard()
-    )
+    contacts = content_manager.get_contacts()
+    
+    text = "📞 <b>Контакты</b>\n"
+    if contacts.get('telegram'):
+        text += f"Telegram: {contacts['telegram']}\n"
+    if contacts.get('email'):
+        text += f"Email: {contacts['email']}\n"
+    if contacts.get('phone'):
+        text += f"Телефон: {contacts['phone']}\n"
+    if contacts.get('whatsapp'):
+        text += f"WhatsApp: {contacts['whatsapp']}\n"
+    
+    await message.answer(text, parse_mode="HTML", reply_markup=get_back_keyboard())
 
 
 @dp.message_handler(lambda m: m.text == BONUS_TEXT)
@@ -399,7 +416,38 @@ async def create_backup_now() -> str:
         return "❌ Ошибка при создании бекапа"
 
 
+@dp.message_handler(commands=['admin_panel'])
+async def cmd_admin_panel(message: types.Message):
+    """Открыть админ-панель для управления контентом"""
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔️ Эта команда доступна только администратору.")
+        return
+    
+    from admin_panel import admin_menu
+    
+    # Создаем первое сообщение
+    msg = await message.answer("⏳ Загрузка админ-панели...")
+    
+    # Меняем его на админ-панель
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("📦 Портфолио", callback_data="admin_portfolio_menu"),
+        InlineKeyboardButton("❓ FAQ", callback_data="admin_faq_menu"),
+        InlineKeyboardButton("📞 Контакты", callback_data="admin_contacts_menu"),
+        InlineKeyboardButton("👤 О себе", callback_data="admin_about_menu"),
+        InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
+        InlineKeyboardButton("❌ Закрыть", callback_data="admin_close")
+    )
+    
+    text = """⚙️ <b>АДМИН-ПАНЕЛЬ</b>
+
+Выбери раздел для редактирования:"""
+    
+    await msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
 @dp.message_handler(commands=['backup'])
+
 async def cmd_backup(message: types.Message):
     """Команда для создания бекапа вручную (только для админа)"""
     if not is_admin(message.from_user.id):
@@ -1086,6 +1134,7 @@ async def on_startup(dp):
     commands = [
         BotCommand(command="start", description="🚀 Главное меню"),
         BotCommand(command="menu", description="🏠 Вернуться в меню"),
+        BotCommand(command="admin_panel", description="⚙️ Админ-панель (админ)"),
         BotCommand(command="backup", description="💾 Создать бекап (админ)"),
         BotCommand(command="backup_list", description="📂 Список бекапов (админ)"),
         BotCommand(command="backup_settings", description="⚙️ Настройки бекапов (админ)"),
@@ -1104,6 +1153,10 @@ async def on_startup(dp):
     if BACKUP_ENABLED:
         asyncio.create_task(periodic_backup())
         logging.info(f"Автоматические бекапы включены (каждые {BACKUP_INTERVAL_DAYS} дней)")
+    
+    # Регистрируем обработчики админ-панели
+    register_admin_handlers(dp)
+    logging.info("✅ Админ-панель зарегистрирована")
 
 
 if __name__ == '__main__':

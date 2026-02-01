@@ -25,7 +25,6 @@ config.py
 # Google credentials
 google-credentials.json
 credentials.json
-*.json
 
 # IDE
 .vscode/
@@ -47,6 +46,14 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# Backups
+backups/
+*.zip
+
+# BUT keep content JSON files
+!content/
+!content/*.json
 
 # Backups
 backups/
