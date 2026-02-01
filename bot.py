@@ -8,7 +8,7 @@ from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
 from config import *
 from menu import main_menu
@@ -30,6 +30,57 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 # In-memory база для рефералов и бонусов (можно заменить на Google Sheets)
 REFERRALS = {}
 BONUSES = {}
+
+# Тексты кнопок
+MENU_TEXT = "🏠 Меню"
+BACK_TEXT = "⬅️ Назад"
+
+ORDER_TEXT = "📝 Заказать бота"
+PORTFOLIO_TEXT = "💼 Портфолио"
+FAQ_TEXT = "❓ FAQ"
+SUPPORT_TEXT = "💬 Чат поддержки"
+CALC_TEXT = "🧮 Калькулятор стоимости"
+STATUS_TEXT = "📦 Статус заказа"
+ABOUT_TEXT = "👤 О себе"
+CONTACT_TEXT = "📞 Связаться с разработчиком"
+REVIEWS_TEXT = "⭐ Отзывы"
+BONUS_TEXT = "🎁 Бонусы и рефералы"
+
+
+def get_back_keyboard() -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add(KeyboardButton(BACK_TEXT), KeyboardButton(MENU_TEXT))
+    return kb
+
+
+def get_main_inline_keyboard() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("📝 Заказать", callback_data="menu_order"),
+        InlineKeyboardButton("💼 Портфолио", callback_data="menu_portfolio"),
+        InlineKeyboardButton("❓ FAQ", callback_data="menu_faq"),
+        InlineKeyboardButton("🧮 Калькулятор", callback_data="menu_calc"),
+        InlineKeyboardButton("📞 Связаться", callback_data="menu_contact"),
+    )
+    return kb
+
+
+def get_bot_intro_text() -> str:
+    return (
+        "<b>ClientBotManager</b> — бот для приёма заказов на разработку.\n\n"
+        "<b>Что умеет:</b>\n"
+        "• Принимает заявки через анкету\n"
+        "• Показывает портфолио и FAQ\n"
+        "• Считает стоимость проекта\n"
+        "• Ведёт статусы заказов\n"
+        "• Хранит отзывы и бонусы\n"
+    )
+
+
+async def send_main_menu(message: types.Message) -> None:
+    text = get_bot_intro_text() + "\nВыберите действие в меню или кнопках ниже."
+    await message.answer(text, parse_mode="HTML", reply_markup=main_menu)
+    await message.answer("Быстрые действия:", reply_markup=get_main_inline_keyboard())
 
 # FSM классы
 class StatusForm(StatesGroup):
@@ -64,18 +115,48 @@ async def send_welcome(message: types.Message):
         except ValueError:
             pass
     
-    text = (
-        "👋 Привет! Я — ваш личный бот для заказов.\n"
-        "Выберите действие в меню."
-    )
-    await message.answer(text, reply_markup=main_menu)
+    await send_main_menu(message)
+
+
+@dp.message_handler(commands=['menu'])
+async def show_menu(message: types.Message):
+    await send_main_menu(message)
+
+
+@dp.message_handler(lambda m: m.text == MENU_TEXT, state='*')
+async def show_menu_button(message: types.Message, state: FSMContext):
+    if state:
+        await state.finish()
+    await send_main_menu(message)
+
+
+@dp.message_handler(lambda m: m.text == BACK_TEXT, state='*')
+async def back_to_menu(message: types.Message, state: FSMContext):
+    if state:
+        await state.finish()
+    await send_main_menu(message)
 
 
 # ==============================================
 # ОБРАБОТЧИКИ МЕНЮ
 # ==============================================
 
-@dp.message_handler(lambda m: m.text == "Портфолио")
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("menu_"))
+async def handle_inline_menu(callback_query: types.CallbackQuery):
+    action = callback_query.data.replace("menu_", "")
+    if action == "order":
+        await handle_order(callback_query.message)
+    elif action == "portfolio":
+        await handle_portfolio(callback_query.message)
+    elif action == "faq":
+        await handle_faq(callback_query.message)
+    elif action == "calc":
+        await handle_calc(callback_query.message)
+    elif action == "contact":
+        await handle_contact_dev(callback_query.message)
+    await callback_query.answer()
+
+@dp.message_handler(lambda m: m.text == PORTFOLIO_TEXT)
 async def handle_portfolio(message: types.Message):
     """Показ портфолио с кнопками для просмотра кейсов"""
     for case in PORTFOLIO:
@@ -84,6 +165,7 @@ async def handle_portfolio(message: types.Message):
         )
         text = f"<b>{case['title']}</b>\n{case['desc']}"
         await message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await message.answer("Выберите кейс или вернитесь в меню.", reply_markup=get_back_keyboard())
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith("case_"))
 async def show_case_details(callback_query: types.CallbackQuery):
@@ -98,38 +180,50 @@ async def show_case_details(callback_query: types.CallbackQuery):
     await callback_query.answer()
 
 
-@dp.message_handler(lambda m: m.text == "FAQ")
+@dp.message_handler(lambda m: m.text == FAQ_TEXT)
 async def handle_faq(message: types.Message):
     """Показ часто задаваемых вопросов"""
     text = "<b>FAQ — Часто задаваемые вопросы:</b>\n"
     for item in FAQ_LIST:
         text += f"\n<b>Q:</b> {item['q']}\n<b>A:</b> {item['a']}\n"
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML", reply_markup=get_back_keyboard())
 
 
-@dp.message_handler(lambda m: m.text == "Чат поддержки")
+@dp.message_handler(lambda m: m.text == SUPPORT_TEXT)
 async def handle_support(message: types.Message):
     """Чат с поддержкой"""
-    await message.answer("Напишите ваш вопрос, и я отвечу лично.")
-
-
-@dp.message_handler(lambda m: m.text == "О себе")
-async def handle_about(message: types.Message):
-    """Информация о компании"""
     await message.answer(
-        "Я — разработчик Telegram-ботов с опытом 3+ года. "
-        "Более 50 реализованных проектов для бизнеса и частных лиц.\n\n"
-        "Портфолио и отзывы доступны в соответствующих разделах."
+        "💬 Напишите ваш вопрос — я отвечу лично.",
+        reply_markup=get_back_keyboard()
     )
 
 
-@dp.message_handler(lambda m: m.text == "Связаться с разработчиком")
+@dp.message_handler(lambda m: m.text == ABOUT_TEXT)
+async def handle_about(message: types.Message):
+    """Информация о компании"""
+    await message.answer(
+        "👤 <b>О себе</b>\n"
+        "Я — разработчик Telegram-ботов с опытом 3+ года. "
+        "Более 50 реализованных проектов для бизнеса и частных лиц.\n\n"
+        "Портфолио и отзывы доступны в соответствующих разделах.",
+        parse_mode="HTML",
+        reply_markup=get_back_keyboard()
+    )
+
+
+@dp.message_handler(lambda m: m.text == CONTACT_TEXT)
 async def handle_contact_dev(message: types.Message):
     """Контакты разработчика"""
-    await message.answer("Для связи: @ваш_ник или email@example.com")
+    await message.answer(
+        "📞 <b>Контакты</b>\n"
+        "Telegram: @ваш_ник\n"
+        "Email: email@example.com",
+        parse_mode="HTML",
+        reply_markup=get_back_keyboard()
+    )
 
 
-@dp.message_handler(lambda m: m.text == "Бонусы и рефералы")
+@dp.message_handler(lambda m: m.text == BONUS_TEXT)
 async def handle_bonuses(message: types.Message):
     """Показ реферальной ссылки и бонусов"""
     user_id = message.from_user.id
@@ -142,21 +236,31 @@ async def handle_bonuses(message: types.Message):
         f"Ваш бонус: {bonus} руб.\n"
         "\nПригласите друга — получите бонус за каждый оплаченный заказ!"
     )
-    await message.answer(text)
+    await message.answer(text, reply_markup=get_back_keyboard())
 
 
 # ==============================================
 # ОТЗЫВЫ
 # ==============================================
 
-@dp.message_handler(lambda m: m.text == "Отзывы")
+@dp.message_handler(lambda m: m.text == REVIEWS_TEXT)
 async def handle_reviews(message: types.Message):
     """Просмотр отзывов"""
     text = "Отзывы клиентов:\n"
     for r in REVIEWS:
         text += f"\n<b>{r['author']}</b>: {r['text']}\n"
-    text += "\nЕсли хотите оставить отзыв, напишите 'Оставить отзыв'."
-    await message.answer(text, parse_mode="HTML")
+    text += "\nХотите оставить отзыв? Нажмите кнопку ниже."
+    kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("✍️ Оставить отзыв", callback_data="review_add")
+    )
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@dp.callback_query_handler(lambda c: c.data == "review_add")
+async def start_review_inline(callback_query: types.CallbackQuery):
+    await callback_query.message.answer("Напишите ваш отзыв:")
+    await ReviewForm.text.set()
+    await callback_query.answer()
 
 @dp.message_handler(lambda m: m.text.lower() == 'оставить отзыв')
 async def start_review(message: types.Message):
@@ -168,7 +272,7 @@ async def start_review(message: types.Message):
 async def save_review(message: types.Message, state: FSMContext):
     """Сохранение отзыва"""
     REVIEWS.append({"author": message.from_user.first_name, "text": message.text})
-    await message.answer("Спасибо за ваш отзыв!")
+    await message.answer("Спасибо за ваш отзыв!", reply_markup=get_back_keyboard())
     await state.finish()
 
 
@@ -176,12 +280,22 @@ async def save_review(message: types.Message, state: FSMContext):
 # СТАТУС ЗАКАЗА
 # ==============================================
 
-@dp.message_handler(lambda m: m.text == "Статус заказа")
+@dp.message_handler(lambda m: m.text == STATUS_TEXT)
 async def handle_status(message: types.Message):
     """Проверка статуса заказов по user_id"""
     user_id = message.from_user.id
     status = get_ticket_status(user_id)
-    await message.answer(status)
+    kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("🔎 Проверить по номеру", callback_data="status_by_id")
+    )
+    await message.answer(status, reply_markup=kb)
+
+
+@dp.callback_query_handler(lambda c: c.data == "status_by_id")
+async def status_by_id(callback_query: types.CallbackQuery):
+    await callback_query.message.answer("Введите номер заказа:")
+    await StatusForm.order_id.set()
+    await callback_query.answer()
 
 @dp.message_handler(state=StatusForm.order_id)
 async def process_status(message: types.Message, state: FSMContext):
@@ -197,7 +311,7 @@ async def process_status(message: types.Message, state: FSMContext):
 # КАЛЬКУЛЯТОР СТОИМОСТИ
 # ==============================================
 
-@dp.message_handler(lambda m: m.text == "Калькулятор стоимости")
+@dp.message_handler(lambda m: m.text == CALC_TEXT)
 async def handle_calc(message: types.Message):
     """Начало расчёта стоимости"""
     await message.answer("Выберите тип бота: магазин/обычный")
@@ -238,7 +352,7 @@ async def calc_hosting(message: types.Message, state: FSMContext):
 # FSM ЗАКАЗА БОТА
 # ==============================================
 
-@dp.message_handler(lambda m: m.text == "Заказать бота")
+@dp.message_handler(lambda m: m.text == ORDER_TEXT)
 async def handle_order(message: types.Message):
     """Начало оформления заказа"""
     await message.answer("Для заказа бота заполните, пожалуйста, небольшую анкету.\n\nВаши ФИО:")
