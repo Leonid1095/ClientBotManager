@@ -112,7 +112,7 @@ async def handle_support(message: types.Message):
     await message.answer("Напишите ваш вопрос, и я отвечу лично.")
 
 
-@dp.message_handler(lambda m: m.text == "О компании")
+@dp.message_handler(lambda m: m.text == "О себе")
 async def handle_about(message: types.Message):
     """Информация о компании"""
     await message.answer(
@@ -177,16 +177,19 @@ async def save_review(message: types.Message, state: FSMContext):
 
 @dp.message_handler(lambda m: m.text == "Статус заказа")
 async def handle_status(message: types.Message):
-    """Запрос номера заказа для проверки статуса"""
-    await message.answer("Введите номер вашего заказа для проверки статуса:")
-    await StatusForm.order_id.set()
+    """Проверка статуса заказов по user_id"""
+    user_id = message.from_user.id
+    status = get_ticket_status(user_id)
+    await message.answer(status)
+    await state.finish()
 
 @dp.message_handler(state=StatusForm.order_id)
 async def process_status(message: types.Message, state: FSMContext):
-    """Проверка статуса заказа"""
+    """Проверка статуса конкретного заказа"""
     order_id = message.text.strip()
-    status = get_ticket_status(order_id)
-    await message.answer(f"Статус заказа {order_id}: {status}")
+    user_id = message.from_user.id
+    status = get_ticket_status(user_id, order_id)
+    await message.answer(status)
     await state.finish()
 
 
@@ -355,6 +358,7 @@ async def process_confirm(message: types.Message, state: FSMContext):
     ticket = (
         f"Новая заявка на бота:\n"
         f"ID заказа: {order_id}\n"
+        f"User ID: {user_id}\n"
         f"ФИО: {data['fio']}\n"
         f"Контакты: {data['contact']}\n"
         f"Идея: {data['idea']}\n"
@@ -370,39 +374,30 @@ async def process_confirm(message: types.Message, state: FSMContext):
     
     # Отправка клиенту и админу
     await message.answer(
-        f"Спасибо! Ваша заявка принята. Ваш номер заказа: {order_id}\n"
+        f"✅ Спасибо! Ваша заявка принята.\n"
+        f"Номер заказа: {order_id}\n"
         f"Вы можете проверить статус через меню 'Статус заказа'."
     )
-    await bot.send_message(ADMIN_USER_ID, ticket)
-    if data.get('file'):
-        await bot.send_document(ADMIN_USER_ID, data['file'])
     
-    # Сохраняем тикет в Google Sheets
     try:
-        save_ticket({
-            'order_id': order_id,
-            'fio': data['fio'],
-            'contact': data['contact'],
-            'idea': data['idea'],
-            'type_bot': data['type_bot'],
-            'budget': data['budget'],
-            'deadline': data['deadline'],
-            'options': data['options'],
-            'settings': data['settings'],
-            'file': data.get('file', ''),
-            'hosting': data['hosting'],
-            'status': 'новый',
-            'user_id': user_id,
-        })
+        await bot.send_message(ADMIN_USER_ID, ticket)
+        if data.get('file'):
+            await bot.send_document(ADMIN_USER_ID, data['file'])
     except Exception as e:
-        logging.error(f"Ошибка при сохранении тикета в Google Sheets: {e}")
+        logging.error(f"Ошибка отправки админу: {e}")
+    
+    # Сохраняем тикет (и в памяти и в Google Sheets)
+    try:
+        save_ticket(user_id, order_id, data)
+    except Exception as e:
+        logging.error(f"Ошибка при сохранении тикета: {e}")
     
     await state.finish()
 
 @dp.message_handler(lambda m: m.text.lower() == 'отмена', state=OrderForm.confirm)
 async def process_cancel(message: types.Message, state: FSMContext):
     """Отмена заказа"""
-    await message.answer("Заявка отменена.")
+    await message.answer("❌ Заявка отменена.")
     await state.finish()
 
 
