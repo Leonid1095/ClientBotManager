@@ -16,4 +16,8 @@ main_menu.add(
 )
 main_menu.add(
     KeyboardButton("Статус заказа"),
-	KeyboardButton("О себе"),
+    KeyboardButton("О себе"),
+    KeyboardButton("Связаться с разработчиком"),
+    KeyboardButton("Отзывы"),
+    KeyboardButton("Бонусы и рефералы")
+)
