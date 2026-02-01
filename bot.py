@@ -3,13 +3,12 @@
 
 import logging
 import uuid
-import asyncio
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters.command import Command
 
 from config import *
 from menu import main_menu
@@ -25,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Инициализация бота и диспетчера
 bot = Bot(token=TELEGRAM_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+dp = Dispatcher(bot, storage=MemoryStorage())
 
 # In-memory база для рефералов и бонусов (можно заменить на Google Sheets)
 REFERRALS = {}
@@ -432,12 +431,6 @@ def _format_order_summary(data: dict) -> str:
 # ЗАПУСК БОТА
 # ==============================================
 
-async def main():
-    print("🤖 Бот запущен!")
-    try:
-        await dp.start_polling(bot, skip_updates=True)
-    finally:
-        await bot.session.close()
-
 if __name__ == '__main__':
-    asyncio.run(main())
+    print("🤖 Бот запущен!")
+    executor.start_polling(dp, skip_updates=True)
