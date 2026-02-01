@@ -47,3 +47,8 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# Backups
+backups/
+backup_*/
+*.zip

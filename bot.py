@@ -3,6 +3,9 @@
 
 import logging
 import uuid
+import asyncio
+import os
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -17,7 +20,8 @@ from faq import FAQ_LIST
 from portfolio import PORTFOLIO
 from reviews import REVIEWS
 from calc import calculate_price
-from data import save_ticket, get_ticket_status
+from data import save_ticket, get_ticket_status, TICKETS_DB, REFERRALS_DB, BONUSES_DB
+from backup import BackupManager
 
 # Настройка логирования (красивый формат)
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
@@ -27,9 +31,9 @@ logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt="%Y-%m-%d %H:
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
-# In-memory база для рефералов и бонусов (можно заменить на Google Sheets)
-REFERRALS = {}
-BONUSES = {}
+# Инициализация менеджера бекапов
+backup_manager = BackupManager(BACKUP_DIR)
+last_backup_time = None
 
 # Тексты кнопок
 MENU_TEXT = "🏠 Меню"
@@ -110,8 +114,8 @@ async def send_welcome(message: types.Message):
         try:
             ref_id = int(args[3:])
             if ref_id != user_id:
-                REFERRALS.setdefault(ref_id, []).append(user_id)
-                BONUSES[ref_id] = BONUSES.get(ref_id, 0) + 100  # 100 руб. бонус
+                REFERRALS_DB.setdefault(ref_id, []).append(user_id)
+                BONUSES_DB[ref_id] = BONUSES_DB.get(ref_id, 0) + 100  # 100 руб. бонус
         except ValueError:
             pass
     
@@ -228,8 +232,8 @@ async def handle_bonuses(message: types.Message):
     """Показ реферальной ссылки и бонусов"""
     user_id = message.from_user.id
     ref_link = f"https://t.me/{(await bot.get_me()).username}?start=ref{user_id}"
-    invited = REFERRALS.get(user_id, [])
-    bonus = BONUSES.get(user_id, 0)
+    invited = REFERRALS_DB.get(user_id, [])
+    bonus = BONUSES_DB.get(user_id, 0)
     text = (
         f"Ваша реферальная ссылка:\n{ref_link}\n"
         f"Приглашено пользователей: {len(invited)}\n"
@@ -289,6 +293,190 @@ async def handle_status(message: types.Message):
         InlineKeyboardButton("🔎 Проверить по номеру", callback_data="status_by_id")
     )
     await message.answer(status, reply_markup=kb)
+
+
+# ==============================================
+# УПРАВЛЕНИЕ БЕКАПАМИ (ТОЛЬКО ДЛЯ АДМИНИСТРАТОРА)
+# ==============================================
+
+def is_admin(user_id: int) -> bool:
+    """Проверка, является ли пользователь администратором"""
+    return user_id == ADMIN_USER_ID
+
+
+async def create_backup_now() -> str:
+    """Создает бекап всех данных"""
+    global last_backup_time
+    
+    data_to_backup = {
+        "tickets": TICKETS_DB,
+        "referrals": REFERRALS_DB,
+        "bonuses": BONUSES_DB,
+        "reviews": REVIEWS
+    }
+    
+    backup_path = backup_manager.create_backup(data_to_backup)
+    if backup_path:
+        last_backup_time = datetime.now()
+        # Очистка старых бекапов
+        backup_manager.cleanup_old_backups(BACKUP_KEEP_COUNT)
+        return f"✅ Бекап создан успешно:\n{backup_path}"
+    else:
+        return "❌ Ошибка при создании бекапа"
+
+
+@dp.message_handler(commands=['backup'])
+async def cmd_backup(message: types.Message):
+    """Команда для создания бекапа вручную (только для админа)"""
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔️ Эта команда доступна только администратору.")
+        return
+    
+    result = await create_backup_now()
+    await message.answer(result)
+
+
+@dp.message_handler(commands=['backup_list'])
+async def cmd_backup_list(message: types.Message):
+    """Список всех бекапов (только для админа)"""
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔️ Эта команда доступна только администратору.")
+        return
+    
+    backups = backup_manager.list_backups()
+    
+    if not backups:
+        await message.answer("📂 Бекапы не найдены.")
+        return
+    
+    text = "📂 <b>Список бекапов:</b>\n\n"
+    
+    for i, backup in enumerate(backups, 1):
+        filename = backup['filename']
+        size_kb = backup['size_kb']
+        metadata = backup.get('metadata', {})
+        
+        text += f"{i}. <code>{filename}</code>\n"
+        text += f"   Размер: {size_kb} KB\n"
+        
+        if metadata:
+            created = metadata.get('created_at', 'неизвестно')
+            records = metadata.get('records_count', {})
+            text += f"   Создан: {created}\n"
+            text += f"   Записей: {records.get('tickets', 0)} заказов, "
+            text += f"{records.get('reviews', 0)} отзывов\n"
+        
+        text += "\n"
+    
+    # Создаем инлайн-кнопки для восстановления
+    kb = InlineKeyboardMarkup(row_width=1)
+    for backup in backups[:5]:  # Показываем только первые 5
+        kb.add(InlineKeyboardButton(
+            f"Восстановить {backup['filename'][:20]}...",
+            callback_data=f"restore_{backup['filename']}"
+        ))
+    
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@dp.message_handler(commands=['backup_settings'])
+async def cmd_backup_settings(message: types.Message):
+    """Настройки автоматического бекапа (только для админа)"""
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔️ Эта команда доступна только администратору.")
+        return
+    
+    text = (
+        "⚙️ <b>Настройки автоматического бекапа:</b>\n\n"
+        f"Включено: {'✅' if BACKUP_ENABLED else '❌'}\n"
+        f"Интервал: {BACKUP_INTERVAL_DAYS} дней\n"
+        f"Директория: {BACKUP_DIR}\n"
+        f"Хранить бекапов: {BACKUP_KEEP_COUNT} шт.\n"
+    )
+    
+    if last_backup_time:
+        next_backup = last_backup_time + timedelta(days=BACKUP_INTERVAL_DAYS)
+        text += f"\nПоследний бекап: {last_backup_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        text += f"Следующий бекап: {next_backup.strftime('%Y-%m-%d %H:%M:%S')}\n"
+    
+    text += "\n💡 Для изменения настроек отредактируйте файл config.py"
+    
+    await message.answer(text, parse_mode="HTML")
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("restore_"))
+async def handle_restore_backup(callback_query: types.CallbackQuery):
+    """Восстановление данных из бекапа"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔️ Доступ запрещен", show_alert=True)
+        return
+    
+    filename = callback_query.data.replace("restore_", "")
+    backup_path = os.path.join(BACKUP_DIR, filename)
+    
+    # Запрашиваем подтверждение
+    kb = InlineKeyboardMarkup()
+    kb.add(
+        InlineKeyboardButton("✅ Да, восстановить", callback_data=f"confirm_restore_{filename}"),
+        InlineKeyboardButton("❌ Отмена", callback_data="cancel_restore")
+    )
+    
+    await callback_query.message.answer(
+        f"⚠️ <b>Внимание!</b>\n\n"
+        f"Вы уверены, что хотите восстановить данные из бекапа?\n"
+        f"<code>{filename}</code>\n\n"
+        f"Текущие данные будут заменены!",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("confirm_restore_"))
+async def confirm_restore_backup(callback_query: types.CallbackQuery):
+    """Подтверждение восстановления бекапа"""
+    global REFERRALS_DB, BONUSES_DB
+    
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔️ Доступ запрещен", show_alert=True)
+        return
+    
+    filename = callback_query.data.replace("confirm_restore_", "")
+    backup_path = os.path.join(BACKUP_DIR, filename)
+    
+    restored_data = backup_manager.restore_backup(backup_path)
+    
+    if restored_data:
+        # Восстанавливаем данные
+        from data import TICKETS_DB
+        
+        TICKETS_DB.clear()
+        TICKETS_DB.update(restored_data.get('tickets', {}))
+        
+        REFERRALS_DB.clear()
+        REFERRALS_DB.update(restored_data.get('referrals', {}))
+        
+        BONUSES_DB.clear()
+        BONUSES_DB.update(restored_data.get('bonuses', {}))
+        
+        REVIEWS.clear()
+        REVIEWS.extend(restored_data.get('reviews', []))
+        
+        await callback_query.message.answer(
+            f"✅ Данные успешно восстановлены из бекапа:\n<code>{filename}</code>",
+            parse_mode="HTML"
+        )
+    else:
+        await callback_query.message.answer("❌ Ошибка при восстановлении бекапа")
+    
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "cancel_restore")
+async def cancel_restore(callback_query: types.CallbackQuery):
+    """Отмена восстановления"""
+    await callback_query.message.answer("❌ Восстановление отменено")
+    await callback_query.answer()
 
 
 @dp.callback_query_handler(lambda c: c.data == "status_by_id")
@@ -540,6 +728,44 @@ def _format_order_summary(data: dict) -> str:
 # ЗАПУСК БОТА
 # ==============================================
 
+async def periodic_backup():
+    """Периодическое создание бекапов"""
+    while True:
+        try:
+            # Ждем указанный интервал (в секундах)
+            await asyncio.sleep(BACKUP_INTERVAL_DAYS * 24 * 60 * 60)
+            
+            if BACKUP_ENABLED:
+                logging.info("Запуск автоматического бекапа...")
+                result = await create_backup_now()
+                logging.info(result)
+                
+                # Уведомляем администратора
+                try:
+                    await bot.send_message(ADMIN_USER_ID, f"🔄 Автоматический бекап:\n{result}")
+                except Exception as e:
+                    logging.error(f"Не удалось отправить уведомление о бекапе: {e}")
+                    
+        except Exception as e:
+            logging.error(f"Ошибка в periodic_backup: {e}")
+            await asyncio.sleep(3600)  # В случае ошибки ждем 1 час
+
+
+async def on_startup(dp):
+    """Действия при запуске бота"""
+    logging.info("🤖 Бот запущен!")
+    
+    # Создаем начальный бекап при старте
+    if BACKUP_ENABLED:
+        logging.info("Создание начального бекапа...")
+        result = await create_backup_now()
+        logging.info(result)
+    
+    # Запускаем фоновую задачу для периодических бекапов
+    if BACKUP_ENABLED:
+        asyncio.create_task(periodic_backup())
+        logging.info(f"Автоматические бекапы включены (каждые {BACKUP_INTERVAL_DAYS} дней)")
+
+
 if __name__ == '__main__':
-    print("🤖 Бот запущен!")
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)

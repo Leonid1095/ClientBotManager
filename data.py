@@ -7,6 +7,8 @@ from datetime import datetime
 
 # In-memory хранилище если Google Sheets недоступен
 TICKETS_DB = {}  # {user_id: {order_id: {...}, ...}}
+REFERRALS_DB = {}  # {user_id: [referred_user_ids]}
+BONUSES_DB = {}  # {user_id: bonus_amount}
 
 try:
     from oauth2client.service_account import ServiceAccountCredentials
