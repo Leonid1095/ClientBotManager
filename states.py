@@ -20,4 +20,18 @@ class OrderForm(StatesGroup):
 	settings = State()
 	file = State()
 	hosting = State()
-    use_bonus = State()
+	use_bonus = State()
+
+
+class StatusForm(StatesGroup):
+	order_id = State()
+
+
+class CalcState(StatesGroup):
+	type_bot = State()
+	complexity = State()
+	hosting = State()
+
+
+class ReviewForm(StatesGroup):
+	text = State()
