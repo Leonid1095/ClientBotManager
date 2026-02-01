@@ -181,7 +181,6 @@ async def handle_status(message: types.Message):
     user_id = message.from_user.id
     status = get_ticket_status(user_id)
     await message.answer(status)
-    await state.finish()
 
 @dp.message_handler(state=StatusForm.order_id)
 async def process_status(message: types.Message, state: FSMContext):
