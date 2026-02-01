@@ -741,68 +741,127 @@ async def calc_hosting(message: types.Message, state: FSMContext):
 @dp.message_handler(lambda m: m.text == ORDER_TEXT)
 async def handle_order(message: types.Message):
     """Начало оформления заказа"""
-    await message.answer("Для заказа бота заполните, пожалуйста, небольшую анкету.\n\nВаши ФИО:")
+    await message.answer(
+        "Для заказа бота заполните, пожалуйста, небольшую анкету.\n\n"
+        "Ваши ФИО:",
+        reply_markup=InlineKeyboardMarkup().add(
+            InlineKeyboardButton("❌ Отмена", callback_data="cancel_order")
+        )
+    )
     await OrderForm.fio.set()
+
+
+@dp.callback_query_handler(lambda c: c.data == "cancel_order", state='*')
+async def cancel_order_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    """Отмена оформления заказа (универсальный обработчик)"""
+    await callback_query.message.edit_text("❌ Оформление заказа отменено.")
+    if state:
+        await state.finish()
+    await callback_query.answer()
+
+
+@dp.message_handler(lambda m: m.text.lower() == 'отмена', state=OrderForm)
+async def cancel_order_text(message: types.Message, state: FSMContext):
+    """Отмена оформления заказа через текстовое сообщение"""
+    await message.answer("❌ Оформление заказа отменено.", reply_markup=get_back_keyboard())
+    await state.finish()
+
+
+def get_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура с кнопкой отмены"""
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="cancel_order"))
+    return kb
 
 @dp.message_handler(state=OrderForm.fio)
 async def process_fio(message: types.Message, state: FSMContext):
     await state.update_data(fio=message.text)
-    await message.answer("Ваши контактные данные (телефон, email, Telegram):")
+    await message.answer(
+        "Ваши контактные данные (телефон, email, Telegram):",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(state=OrderForm.contact)
 async def process_contact(message: types.Message, state: FSMContext):
     await state.update_data(contact=message.text)
-    await message.answer("Опишите вашу идею для бота:")
+    await message.answer(
+        "Опишите вашу идею для бота:",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(state=OrderForm.idea)
 async def process_idea(message: types.Message, state: FSMContext):
     await state.update_data(idea=message.text)
-    await message.answer("Выберите тип бота (чат-бот, магазин, интеграция и т.д.):")
+    await message.answer(
+        "Выберите тип бота (чат-бот, магазин, интеграция и т.д.):",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(state=OrderForm.type_bot)
 async def process_type_bot(message: types.Message, state: FSMContext):
     await state.update_data(type_bot=message.text)
-    await message.answer("Укажите желаемый бюджет:")
+    await message.answer(
+        "Укажите желаемый бюджет:",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(state=OrderForm.budget)
 async def process_budget(message: types.Message, state: FSMContext):
     await state.update_data(budget=message.text)
-    await message.answer("Укажите желаемые сроки:")
+    await message.answer(
+        "Укажите желаемые сроки:",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(state=OrderForm.deadline)
 async def process_deadline(message: types.Message, state: FSMContext):
     await state.update_data(deadline=message.text)
-    await message.answer("Выберите тариф или опции (опишите, если есть):")
+    await message.answer(
+        "Выберите тариф или опции (опишите, если есть):",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(state=OrderForm.options)
 async def process_options(message: types.Message, state: FSMContext):
     await state.update_data(options=message.text)
-    await message.answer("Есть ли особые настройки или пожелания?")
+    await message.answer(
+        "Есть ли особые настройки или пожелания?",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(state=OrderForm.settings)
 async def process_settings(message: types.Message, state: FSMContext):
     await state.update_data(settings=message.text)
-    await message.answer("Прикрепите файл (если есть) или напишите 'нет':")
+    await message.answer(
+        "Прикрепите файл (если есть) или напишите 'нет':",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(content_types=types.ContentType.DOCUMENT, state=OrderForm.file)
 async def process_file(message: types.Message, state: FSMContext):
     file_id = message.document.file_id
     await state.update_data(file=file_id)
-    await message.answer("Где будет размещён бот?\n1. Ваш сервер\n2. Мой сервер (аренда)")
+    await message.answer(
+        "Где будет размещён бот?\n1. Ваш сервер\n2. Мой сервер (аренда)",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(lambda m: m.text.lower() == 'нет', state=OrderForm.file)
 async def process_no_file(message: types.Message, state: FSMContext):
     await state.update_data(file=None)
-    await message.answer("Где будет размещён бот?\n1. Ваш сервер\n2. Мой сервер (аренда)")
+    await message.answer(
+        "Где будет размещён бот?\n1. Ваш сервер\n2. Мой сервер (аренда)",
+        reply_markup=get_cancel_keyboard()
+    )
     await OrderForm.next()
 
 @dp.message_handler(state=OrderForm.hosting)
@@ -810,23 +869,31 @@ async def process_hosting(message: types.Message, state: FSMContext):
     """Обработка хостинга и предложение использовать бонусы"""
     await state.update_data(hosting=message.text)
     user_id = message.from_user.id
-    bonus = BONUSES.get(user_id, 0)
+    bonus = BONUSES_DB.get(user_id, 0)
     
     if bonus > 0:
-        await message.answer(f"У вас есть бонусы: {bonus} руб.\nИспользовать бонусы для скидки? (да/нет)")
+        await message.answer(
+            f"У вас есть бонусы: {bonus} руб.\nИспользовать бонусы для скидки? (да/нет)",
+            reply_markup=get_cancel_keyboard()
+        )
         await OrderForm.next()
     else:
         await state.update_data(use_bonus=False, bonus_amount=0)
         data = await state.get_data()
         summary = _format_order_summary(data)
-        await message.answer(summary + "\nЕсли всё верно, напишите 'Подтверждаю'. Для отмены — 'Отмена'.")
+        kb = InlineKeyboardMarkup()
+        kb.add(
+            InlineKeyboardButton("✅ Подтверждаю", callback_data="confirm_order"),
+            InlineKeyboardButton("❌ Отмена", callback_data="cancel_order")
+        )
+        await message.answer(summary + "\nЕсли всё верно, нажмите 'Подтверждаю'.", reply_markup=kb)
         await OrderForm.confirm.set()
 
 @dp.message_handler(state=OrderForm.use_bonus)
 async def process_use_bonus(message: types.Message, state: FSMContext):
     """Обработка решения об использовании бонусов"""
     user_id = message.from_user.id
-    bonus = BONUSES.get(user_id, 0)
+    bonus = BONUSES_DB.get(user_id, 0)
     
     if message.text.lower() == 'да':
         await state.update_data(use_bonus=True, bonus_amount=bonus)
@@ -837,54 +904,63 @@ async def process_use_bonus(message: types.Message, state: FSMContext):
     
     data = await state.get_data()
     summary = _format_order_summary(data) + discount_text
-    await message.answer(summary + "\nЕсли всё верно, напишите 'Подтверждаю'. Для отмены — 'Отмена'.")
-    await OrderForm.next()
+    kb = InlineKeyboardMarkup()
+    kb.add(
+        InlineKeyboardButton("✅ Подтверждаю", callback_data="confirm_order"),
+        InlineKeyboardButton("❌ Отмена", callback_data="cancel_order")
+    )
+    await message.answer(summary + "\nЕсли всё верно, нажмите 'Подтверждаю'.", reply_markup=kb)
+    await OrderForm.confirm.set()
 
-@dp.message_handler(lambda m: m.text.lower() == 'подтверждаю', state=OrderForm.confirm)
-async def process_confirm(message: types.Message, state: FSMContext):
-    """Подтверждение и сохранение заказа"""
+@dp.callback_query_handler(lambda c: c.data == "confirm_order", state=OrderForm.confirm)
+async def process_confirm_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    """Подтверждение заказа через кнопку"""
+    message = callback_query.message
     data = await state.get_data()
     order_id = str(uuid.uuid4())[:8]
-    user_id = message.from_user.id
+    user_id = callback_query.from_user.id
     
     # Списываем бонусы если использовались
     bonus_text = ""
     if data.get('use_bonus', False):
         bonus_amount = data.get('bonus_amount', 0)
-        BONUSES[user_id] = BONUSES.get(user_id, 0) - bonus_amount
+        BONUSES_DB[user_id] = BONUSES_DB.get(user_id, 0) - bonus_amount
         bonus_text = f"Использовано бонусов: {bonus_amount} руб.\n"
     
-    # Формирование тикета
+    # Формирование тикета для администратора
     ticket = (
-        f"Новая заявка на бота:\n"
-        f"ID заказа: {order_id}\n"
-        f"User ID: {user_id}\n"
-        f"ФИО: {data['fio']}\n"
-        f"Контакты: {data['contact']}\n"
-        f"Идея: {data['idea']}\n"
-        f"Тип бота: {data['type_bot']}\n"
-        f"Бюджет: {data['budget']}\n"
-        f"Сроки: {data['deadline']}\n"
-        f"Тариф/опции: {data['options']}\n"
-        f"Настройки: {data['settings']}\n"
-        f"Файл: {'Есть' if data.get('file') else 'Нет'}\n"
-        f"Хостинг: {data['hosting']}\n"
-        + bonus_text
+        f"<b>🆕 Новая заявка на разработку бота:</b>\n\n"
+        f"<b>ID заказа:</b> <code>{order_id}</code>\n"
+        f"<b>User ID:</b> <code>{user_id}</code>\n"
+        f"<b>ФИО:</b> {data.get('fio', '-')}\n"
+        f"<b>Контакты:</b> {data.get('contact', '-')}\n"
+        f"<b>Идея:</b> {data.get('idea', '-')}\n"
+        f"<b>Тип бота:</b> {data.get('type_bot', '-')}\n"
+        f"<b>Бюджет:</b> {data.get('budget', '-')}\n"
+        f"<b>Сроки:</b> {data.get('deadline', '-')}\n"
+        f"<b>Тариф/опции:</b> {data.get('options', '-')}\n"
+        f"<b>Настройки:</b> {data.get('settings', '-')}\n"
+        f"<b>Файл:</b> {'Приложен' if data.get('file') else 'Нет'}\n"
+        f"<b>Хостинг:</b> {data.get('hosting', '-')}\n"
+        f"{bonus_text}"
     )
     
-    # Отправка клиенту и админу
-    await message.answer(
-        f"✅ Спасибо! Ваша заявка принята.\n"
-        f"Номер заказа: {order_id}\n"
-        f"Вы можете проверить статус через меню 'Статус заказа'."
+    # Отправка клиенту
+    await callback_query.message.edit_text(
+        f"✅ <b>Спасибо! Ваша заявка принята.</b>\n\n"
+        f"<b>Номер заказа:</b> <code>{order_id}</code>\n"
+        f"Вы можете проверить статус через меню '📦 Статус заказа'.",
+        parse_mode="HTML"
     )
     
+    # Отправка администратору
     try:
-        await bot.send_message(ADMIN_USER_ID, ticket)
+        await bot.send_message(ADMIN_USER_ID, ticket, parse_mode="HTML")
         if data.get('file'):
-            await bot.send_document(ADMIN_USER_ID, data['file'])
+            await bot.send_document(ADMIN_USER_ID, data['file'], caption=f"Файл к заявке #{order_id}")
     except Exception as e:
         logging.error(f"Ошибка отправки админу: {e}")
+        await callback_query.message.answer("⚠️ Ошибка отправки администратору. Пожалуйста, свяжитесь напрямую.")
     
     # Сохраняем тикет (и в памяти и в Google Sheets)
     try:
@@ -893,11 +969,63 @@ async def process_confirm(message: types.Message, state: FSMContext):
         logging.error(f"Ошибка при сохранении тикета: {e}")
     
     await state.finish()
+    await callback_query.answer()
 
-@dp.message_handler(lambda m: m.text.lower() == 'отмена', state=OrderForm.confirm)
-async def process_cancel(message: types.Message, state: FSMContext):
-    """Отмена заказа"""
-    await message.answer("❌ Заявка отменена.")
+@dp.message_handler(lambda m: m.text.lower() == 'подтверждаю', state=OrderForm.confirm)
+async def process_confirm(message: types.Message, state: FSMContext):
+    """Подтверждение заказа (старый способ, для совместимости)"""
+    data = await state.get_data()
+    order_id = str(uuid.uuid4())[:8]
+    user_id = message.from_user.id
+    
+    # Списываем бонусы если использовались
+    bonus_text = ""
+    if data.get('use_bonus', False):
+        bonus_amount = data.get('bonus_amount', 0)
+        BONUSES_DB[user_id] = BONUSES_DB.get(user_id, 0) - bonus_amount
+        bonus_text = f"Использовано бонусов: {bonus_amount} руб.\n"
+    
+    # Формирование тикета для администратора
+    ticket = (
+        f"<b>🆕 Новая заявка на разработку бота:</b>\n\n"
+        f"<b>ID заказа:</b> <code>{order_id}</code>\n"
+        f"<b>User ID:</b> <code>{user_id}</code>\n"
+        f"<b>ФИО:</b> {data.get('fio', '-')}\n"
+        f"<b>Контакты:</b> {data.get('contact', '-')}\n"
+        f"<b>Идея:</b> {data.get('idea', '-')}\n"
+        f"<b>Тип бота:</b> {data.get('type_bot', '-')}\n"
+        f"<b>Бюджет:</b> {data.get('budget', '-')}\n"
+        f"<b>Сроки:</b> {data.get('deadline', '-')}\n"
+        f"<b>Тариф/опции:</b> {data.get('options', '-')}\n"
+        f"<b>Настройки:</b> {data.get('settings', '-')}\n"
+        f"<b>Файл:</b> {'Приложен' if data.get('file') else 'Нет'}\n"
+        f"<b>Хостинг:</b> {data.get('hosting', '-')}\n"
+        f"{bonus_text}"
+    )
+    
+    # Отправка клиенту
+    await message.answer(
+        f"✅ <b>Спасибо! Ваша заявка принята.</b>\n\n"
+        f"<b>Номер заказа:</b> <code>{order_id}</code>\n"
+        f"Вы можете проверить статус через меню '📦 Статус заказа'.",
+        parse_mode="HTML"
+    )
+    
+    # Отправка администратору
+    try:
+        await bot.send_message(ADMIN_USER_ID, ticket, parse_mode="HTML")
+        if data.get('file'):
+            await bot.send_document(ADMIN_USER_ID, data['file'], caption=f"Файл к заявке #{order_id}")
+    except Exception as e:
+        logging.error(f"Ошибка отправки админу: {e}")
+        await message.answer("⚠️ Ошибка отправки администратору. Пожалуйста, свяжитесь напрямую.")
+    
+    # Сохраняем тикет (и в памяти и в Google Sheets)
+    try:
+        save_ticket(user_id, order_id, data)
+    except Exception as e:
+        logging.error(f"Ошибка при сохранении тикета: {e}")
+    
     await state.finish()
 
 
