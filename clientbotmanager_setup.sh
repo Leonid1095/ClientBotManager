@@ -1,6 +1,7 @@
 #!/bin/bash
 # ===================================================
-# Автоматическое развертывание бота на Linux-сервере
+# ClientBotManager - Автоматическое развертывание
+# Telegram Bot для управления заказами
 # ===================================================
 
 set -e  # Выход при ошибке
@@ -14,7 +15,8 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}"
 echo "=========================================="
-echo "  🤖 РАЗВЕРТЫВАНИЕ TELEGRAM-БОТА"
+echo "  🤖 ClientBotManager Setup"
+echo "  Развертывание на Linux-сервер"
 echo "=========================================="
 echo -e "${NC}"
 
@@ -36,7 +38,7 @@ PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
 echo -e "${GREEN}✓ Python $PYTHON_VERSION установлен${NC}"
 
 # 4. Создание директории для бота
-echo -e "${BLUE}[3/8] Создание директории для бота...${NC}"
+echo -e "${BLUE}[3/8] Создание директории для ClientBotManager...${NC}"
 BOT_DIR="/opt/clientbotmanager"
 read -p "Директория для установки [$BOT_DIR]: " USER_DIR
 BOT_DIR=${USER_DIR:-$BOT_DIR}
@@ -55,7 +57,7 @@ cd "$BOT_DIR"
 echo -e "${GREEN}✓ Директория создана: $BOT_DIR${NC}"
 
 # 5. Клонирование репозитория
-echo -e "${BLUE}[4/8] Загрузка бота с GitHub...${NC}"
+echo -e "${BLUE}[4/8] Загрузка ClientBotManager с GitHub...${NC}"
 read -p "Клонировать из GitHub? (y/n): " CLONE
 if [ "$CLONE" = "y" ]; then
     git clone https://github.com/Leonid1095/ClientBotManager.git .
@@ -66,7 +68,7 @@ else
 fi
 
 # 6. Запуск установщика
-echo -e "${BLUE}[5/8] Запуск установщика бота...${NC}"
+echo -e "${BLUE}[5/8] Запуск установщика ClientBotManager...${NC}"
 python3 install.py
 
 # 7. Создание systemd service
@@ -76,6 +78,7 @@ SERVICE_FILE="/etc/systemd/system/clientbotmanager.service"
 sudo tee $SERVICE_FILE > /dev/null <<EOF
 [Unit]
 Description=ClientBotManager Telegram Bot
+Documentation=https://github.com/Leonid1095/ClientBotManager
 After=network.target
 
 [Service]
@@ -85,8 +88,8 @@ WorkingDirectory=$BOT_DIR
 ExecStart=$BOT_DIR/venv/bin/python $BOT_DIR/bot.py
 Restart=always
 RestartSec=10
-StandardOutput=append:$BOT_DIR/bot.log
-StandardError=append:$BOT_DIR/bot_error.log
+StandardOutput=append:$BOT_DIR/clientbotmanager.log
+StandardError=append:$BOT_DIR/clientbotmanager_error.log
 
 [Install]
 WantedBy=multi-user.target
@@ -103,7 +106,7 @@ sudo systemctl start clientbotmanager.service
 # Проверка статуса
 sleep 2
 if sudo systemctl is-active --quiet clientbotmanager.service; then
-    echo -e "${GREEN}✓ Бот успешно запущен!${NC}"
+    echo -e "${GREEN}✓ ClientBotManager успешно запущен!${NC}"
 else
     echo -e "${RED}✗ Ошибка при запуске. Проверьте логи: journalctl -u clientbotmanager -n 50${NC}"
 fi
@@ -111,65 +114,71 @@ fi
 # 9. Создание скриптов управления
 echo -e "${BLUE}[8/8] Создание скриптов управления...${NC}"
 
-cat > "$BOT_DIR/control.sh" <<'CONTROL'
+cat > "$BOT_DIR/cbm-control.sh" <<'CONTROL'
 #!/bin/bash
+# ClientBotManager Control Script
+
+SERVICE_NAME="clientbotmanager"
+BOT_DIR="/opt/clientbotmanager"
+
 case "$1" in
     start)
-        sudo systemctl start clientbotmanager.service
-        echo "Бот запущен"
+        sudo systemctl start $SERVICE_NAME.service
+        echo "✓ ClientBotManager запущен"
         ;;
     stop)
-        sudo systemctl stop clientbotmanager.service
-        echo "Бот остановлен"
+        sudo systemctl stop $SERVICE_NAME.service
+        echo "✓ ClientBotManager остановлен"
         ;;
     restart)
-        sudo systemctl restart clientbotmanager.service
-        echo "Бот перезапущен"
+        sudo systemctl restart $SERVICE_NAME.service
+        echo "✓ ClientBotManager перезапущен"
         ;;
     status)
-        sudo systemctl status clientbotmanager.service
+        sudo systemctl status $SERVICE_NAME.service
         ;;
     logs)
-        tail -f /opt/clientbotmanager/bot.log
+        tail -f $BOT_DIR/clientbotmanager.log
         ;;
     errors)
-        tail -f /opt/clientbotmanager/bot_error.log
+        tail -f $BOT_DIR/clientbotmanager_error.log
         ;;
     update)
-        cd /opt/clientbotmanager
+        cd $BOT_DIR
         git pull
-        sudo systemctl restart clientbotmanager.service
-        echo "Бот обновлён и перезапущен"
+        sudo systemctl restart $SERVICE_NAME.service
+        echo "✓ ClientBotManager обновлён и перезапущен"
         ;;
     *)
+        echo "ClientBotManager Control"
         echo "Использование: $0 {start|stop|restart|status|logs|errors|update}"
         exit 1
         ;;
 esac
 CONTROL
 
-chmod +x "$BOT_DIR/control.sh"
+chmod +x "$BOT_DIR/cbm-control.sh"
 
 echo -e "${GREEN}✓ Скрипты управления созданы${NC}"
 
 # Итоги
 echo ""
 echo -e "${BLUE}=========================================="
-echo "  ✓ УСТАНОВКА ЗАВЕРШЕНА!"
+echo "  ✓ УСТАНОВКА CLIENTBOTMANAGER ЗАВЕРШЕНА!"
 echo "==========================================${NC}"
 echo ""
 echo -e "${GREEN}Команды управления:${NC}"
-echo "  $BOT_DIR/control.sh start    - Запустить бота"
-echo "  $BOT_DIR/control.sh stop     - Остановить бота"
-echo "  $BOT_DIR/control.sh restart  - Перезапустить бота"
-echo "  $BOT_DIR/control.sh status   - Статус бота"
-echo "  $BOT_DIR/control.sh logs     - Просмотр логов"
-echo "  $BOT_DIR/control.sh errors   - Просмотр ошибок"
-echo "  $BOT_DIR/control.sh update   - Обновить из GitHub"
+echo "  $BOT_DIR/cbm-control.sh start    - Запустить бота"
+echo "  $BOT_DIR/cbm-control.sh stop     - Остановить бота"
+echo "  $BOT_DIR/cbm-control.sh restart  - Перезапустить бота"
+echo "  $BOT_DIR/cbm-control.sh status   - Статус бота"
+echo "  $BOT_DIR/cbm-control.sh logs     - Просмотр логов"
+echo "  $BOT_DIR/cbm-control.sh errors   - Просмотр ошибок"
+echo "  $BOT_DIR/cbm-control.sh update   - Обновить из GitHub"
 echo ""
 echo -e "${GREEN}Системные команды:${NC}"
-echo "  sudo systemctl status clientbotmanager    - Статус службы"
-echo "  sudo journalctl -u clientbotmanager -f    - Логи systemd"
+echo "  sudo systemctl status clientbotmanager      - Статус службы"
+echo "  sudo journalctl -u clientbotmanager -f      - Логи systemd"
 echo ""
-echo -e "${BLUE}Бот работает в фоновом режиме и автоматически запустится после перезагрузки!${NC}"
+echo -e "${BLUE}Бот работает 24/7 и автоматически запустится после перезагрузки!${NC}"
 echo ""

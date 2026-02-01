@@ -4,15 +4,15 @@
 
 ### Linux (Ubuntu/Debian):
 ```bash
-wget https://raw.githubusercontent.com/Leonid1095/ClientBotManager/main/deploy.sh && chmod +x deploy.sh && ./deploy.sh
+wget https://raw.githubusercontent.com/Leonid1095/ClientBotManager/main/clientbotmanager_setup.sh && chmod +x clientbotmanager_setup.sh && ./clientbotmanager_setup.sh
 ```
 
 ### Или через git:
 ```bash
 git clone https://github.com/Leonid1095/ClientBotManager.git
 cd ClientBotManager
-chmod +x deploy.sh
-./deploy.sh
+chmod +x clientbotmanager_setup.sh
+./clientbotmanager_setup.sh
 ```
 
 ---
