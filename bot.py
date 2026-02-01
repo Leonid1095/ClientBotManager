@@ -18,7 +18,7 @@ from menu import main_menu
 from states import OrderForm
 from faq import FAQ_LIST
 from portfolio import PORTFOLIO
-from reviews import REVIEWS
+from reviews import REVIEWS, PENDING_REVIEWS, get_rating_stars
 from calc import calculate_price
 from data import save_ticket, get_ticket_status, TICKETS_DB, REFERRALS_DB, BONUSES_DB
 from backup import BackupManager
@@ -271,10 +271,28 @@ async def handle_bonuses(message: types.Message):
 @dp.message_handler(lambda m: m.text == REVIEWS_TEXT)
 async def handle_reviews(message: types.Message):
     """Просмотр отзывов"""
-    text = "Отзывы клиентов:\n"
-    for r in REVIEWS:
-        text += f"\n<b>{r['author']}</b>: {r['text']}\n"
-    text += "\nХотите оставить отзыв? Нажмите кнопку ниже."
+    if not REVIEWS:
+        await message.answer(
+            "📋 Отзывы клиентов пока отсутствуют.\n\n"
+            "Будьте первым! Оставьте отзыв о нашей работе.",
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("✍️ Оставить отзыв", callback_data="review_add")
+            )
+        )
+        return
+    
+    # Показываем отзывы
+    text = "⭐ <b>Отзывы клиентов:</b>\n\n"
+    for review in REVIEWS:
+        stars = get_rating_stars(review.get("rating", 5))
+        date = review.get("date", "")
+        text += f"{stars}\n"
+        text += f"<b>{review['author']}</b>"
+        if date:
+            text += f" • {date}"
+        text += f"\n{review['text']}\n\n"
+    
+    text += "Хотите оставить отзыв? Нажмите кнопку ниже."
     kb = InlineKeyboardMarkup().add(
         InlineKeyboardButton("✍️ Оставить отзыв", callback_data="review_add")
     )
@@ -295,9 +313,44 @@ async def start_review(message: types.Message):
 
 @dp.message_handler(state=ReviewForm.text)
 async def save_review(message: types.Message, state: FSMContext):
-    """Сохранение отзыва"""
-    REVIEWS.append({"author": message.from_user.first_name, "text": message.text})
-    await message.answer("Спасибо за ваш отзыв!", reply_markup=get_back_keyboard())
+    """Сохранение отзыва в очередь модерации"""
+    user_id = message.from_user.id
+    author = message.from_user.first_name or "Анонимный пользователь"
+    
+    # Добавляем отзыв в очередь модерации
+    review_id = f"rev_pending_{len(PENDING_REVIEWS) + 1}"
+    PENDING_REVIEWS.append({
+        "id": review_id,
+        "author": author,
+        "rating": 5,  # По умолчанию 5 звёзд
+        "text": message.text,
+        "user_id": user_id,
+        "date": datetime.now().isoformat()
+    })
+    
+    await message.answer(
+        "✅ Спасибо за ваш отзыв! Он будет опубликован после проверки модератором.",
+        reply_markup=get_back_keyboard()
+    )
+    
+    # Уведомляем администратора
+    try:
+        await bot.send_message(
+            ADMIN_USER_ID,
+            f"📝 <b>Новый отзыв на модерацию:</b>\n\n"
+            f"<b>Автор:</b> {author}\n"
+            f"<b>Текст:</b> {message.text}\n\n"
+            f"<b>ID:</b> {review_id}\n"
+            f"<b>User ID:</b> {user_id}",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("✅ Одобрить", callback_data=f"approve_review_{review_id}"),
+                InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_review_{review_id}")
+            )
+        )
+    except Exception as e:
+        logging.error(f"Не удалось отправить уведомление администратору: {e}")
+    
     await state.finish()
 
 
@@ -498,6 +551,130 @@ async def cancel_restore(callback_query: types.CallbackQuery):
     """Отмена восстановления"""
     await callback_query.message.answer("❌ Восстановление отменено")
     await callback_query.answer()
+
+
+# ==============================================
+# МОДЕРАЦИЯ ОТЗЫВОВ (ТОЛЬКО ДЛЯ АДМИНИСТРАТОРА)
+# ==============================================
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("approve_review_"))
+async def approve_review(callback_query: types.CallbackQuery):
+    """Одобрить отзыв"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔️ Доступ запрещен", show_alert=True)
+        return
+    
+    review_id = callback_query.data.replace("approve_review_", "")
+    
+    # Найти отзыв в очереди модерации
+    review = None
+    for i, r in enumerate(PENDING_REVIEWS):
+        if r["id"] == review_id:
+            review = PENDING_REVIEWS.pop(i)
+            break
+    
+    if review:
+        # Добавить в опубликованные отзывы
+        review_to_add = {
+            "id": review["id"],
+            "author": review["author"],
+            "rating": review.get("rating", 5),
+            "text": review["text"],
+            "date": review.get("date", datetime.now().isoformat())
+        }
+        REVIEWS.append(review_to_add)
+        
+        await callback_query.message.edit_text(
+            f"✅ <b>Отзыв одобрен!</b>\n\n"
+            f"<b>Автор:</b> {review['author']}\n"
+            f"<b>Текст:</b> {review['text']}",
+            parse_mode="HTML"
+        )
+        
+        # Уведомить пользователя (если у нас есть его ID)
+        try:
+            await bot.send_message(
+                review["user_id"],
+                "✅ Ваш отзыв одобрен и опубликован! Спасибо за отзыв!"
+            )
+        except:
+            pass
+    else:
+        await callback_query.message.edit_text("❌ Отзыв не найден")
+    
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("reject_review_"))
+async def reject_review(callback_query: types.CallbackQuery):
+    """Отклонить отзыв (спам, реклама и т.д.)"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔️ Доступ запрещен", show_alert=True)
+        return
+    
+    review_id = callback_query.data.replace("reject_review_", "")
+    
+    # Найти и удалить отзыв из очереди модерации
+    review = None
+    for i, r in enumerate(PENDING_REVIEWS):
+        if r["id"] == review_id:
+            review = PENDING_REVIEWS.pop(i)
+            break
+    
+    if review:
+        await callback_query.message.edit_text(
+            f"❌ <b>Отзыв отклонен!</b>\n\n"
+            f"<b>Автор:</b> {review['author']}\n"
+            f"<b>Текст:</b> {review['text']}\n\n"
+            f"<i>Причина: спам, реклама или несоответствие правилам</i>",
+            parse_mode="HTML"
+        )
+        
+        # Уведомить пользователя
+        try:
+            await bot.send_message(
+                review["user_id"],
+                "❌ К сожалению, ваш отзыв не был опубликован.\n\n"
+                "Причина: содержимое не соответствует нашим правилам.\n"
+                "Пожалуйста, попробуйте оставить отзыв без ссылок и контактов."
+            )
+        except:
+            pass
+    else:
+        await callback_query.message.edit_text("❌ Отзыв не найден")
+    
+    await callback_query.answer()
+
+
+@dp.message_handler(commands=['reviews_pending'])
+async def cmd_reviews_pending(message: types.Message):
+    """Показать отзывы в очереди модерации (только для админа)"""
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔️ Эта команда доступна только администратору.")
+        return
+    
+    if not PENDING_REVIEWS:
+        await message.answer("📋 Нет отзывов на модерацию.")
+        return
+    
+    text = f"📋 <b>Отзывы на модерацию ({len(PENDING_REVIEWS)}):</b>\n\n"
+    
+    for i, review in enumerate(PENDING_REVIEWS, 1):
+        text += f"{i}. <b>{review['author']}</b> ({get_rating_stars(review.get('rating', 5))})\n"
+        text += f"   {review['text'][:50]}...\n"
+        text += f"   ID: <code>{review['id']}</code>\n\n"
+    
+    # Создаем кнопки для модерации первого отзыва
+    if PENDING_REVIEWS:
+        first_review = PENDING_REVIEWS[0]
+        kb = InlineKeyboardMarkup()
+        kb.add(
+            InlineKeyboardButton("✅ Одобрить", callback_data=f"approve_review_{first_review['id']}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_review_{first_review['id']}")
+        )
+        await message.answer(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        await message.answer(text, parse_mode="HTML")
 
 
 @dp.callback_query_handler(lambda c: c.data == "status_by_id")
@@ -784,6 +961,7 @@ async def on_startup(dp):
         BotCommand(command="backup", description="💾 Создать бекап (админ)"),
         BotCommand(command="backup_list", description="📂 Список бекапов (админ)"),
         BotCommand(command="backup_settings", description="⚙️ Настройки бекапов (админ)"),
+        BotCommand(command="reviews_pending", description="📝 Модерация отзывов (админ)"),
     ]
     await bot.set_my_commands(commands)
     logging.info("✅ Команды зарегистрированы в меню Telegram")
