@@ -776,6 +776,18 @@ async def on_startup(dp):
     """Действия при запуске бота"""
     logging.info("🤖 Бот запущен!")
     
+    # Регистрируем команды в меню Telegram
+    from aiogram.types import BotCommand
+    commands = [
+        BotCommand(command="start", description="🚀 Главное меню"),
+        BotCommand(command="menu", description="🏠 Вернуться в меню"),
+        BotCommand(command="backup", description="💾 Создать бекап (админ)"),
+        BotCommand(command="backup_list", description="📂 Список бекапов (админ)"),
+        BotCommand(command="backup_settings", description="⚙️ Настройки бекапов (админ)"),
+    ]
+    await bot.set_my_commands(commands)
+    logging.info("✅ Команды зарегистрированы в меню Telegram")
+    
     # Создаем начальный бекап при старте
     if BACKUP_ENABLED:
         logging.info("Создание начального бекапа...")
