@@ -15,7 +15,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 
 from config import *
 from menu import main_menu
-from states import OrderForm
+from states import OrderForm, SupportChat, AdminReply
 from faq import FAQ_LIST
 from portfolio import PORTFOLIO
 from reviews import REVIEWS, PENDING_REVIEWS, get_rating_stars
@@ -229,11 +229,218 @@ async def handle_faq(message: types.Message):
 
 @dp.message_handler(lambda m: m.text == SUPPORT_TEXT)
 async def handle_support(message: types.Message):
-    """Чат с поддержкой"""
+    """Активировать чат с поддержкой"""
+    user_id = message.from_user.id
+    username = message.from_user.username or "без username"
+    full_name = message.from_user.full_name or "Неизвестно"
+    
+    await SupportChat.waiting_message.set()
+    
     await message.answer(
-        "💬 Напишите ваш вопрос — я отвечу лично.",
+        "💬 <b>Чат поддержки активирован!</b>\n\n"
+        "Напишите ваш вопрос, и я получу его лично.\n"
+        "Вы можете отправлять текст, фото, файлы.\n\n"
+        "Для выхода нажмите /menu или 🏠 Меню",
+        parse_mode="HTML",
         reply_markup=get_back_keyboard()
     )
+    
+    # Уведомляем админа
+    try:
+        await bot.send_message(
+            ADMIN_USER_ID,
+            f"📨 <b>Новое обращение в поддержку</b>\n\n"
+            f"👤 <b>Пользователь:</b> {full_name}\n"
+            f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+            f"📱 <b>Username:</b> @{username}\n\n"
+            f"<i>Ожидает ответа...</i>",
+            parse_mode="HTML"
+        )
+    except:
+        pass
+
+
+@dp.message_handler(state=SupportChat.waiting_message, content_types=['text', 'photo', 'document', 'video', 'voice', 'audio'])
+async def process_support_message(message: types.Message, state: FSMContext):
+    """Обработка сообщения в чате поддержки"""
+    user_id = message.from_user.id
+    username = message.from_user.username or "без username"
+    full_name = message.from_user.full_name or "Неизвестно"
+    
+    # Формируем информацию об отправителе
+    user_info = (
+        f"💬 <b>Сообщение от пользователя</b>\n\n"
+        f"👤 {full_name}\n"
+        f"🆔 <code>{user_id}</code>\n"
+        f"📱 @{username}\n\n"
+    )
+    
+    # Отправляем админу в зависимости от типа контента
+    try:
+        if message.text:
+            await bot.send_message(
+                ADMIN_USER_ID,
+                user_info + f"📝 <b>Текст:</b>\n{message.text}\n\n"
+                f"<i>Ответить: /reply {user_id}</i>",
+                parse_mode="HTML"
+            )
+        elif message.photo:
+            await bot.send_photo(
+                ADMIN_USER_ID,
+                message.photo[-1].file_id,
+                caption=user_info + (f"📝 {message.caption}\n\n" if message.caption else "") +
+                f"<i>Ответить: /reply {user_id}</i>",
+                parse_mode="HTML"
+            )
+        elif message.document:
+            await bot.send_document(
+                ADMIN_USER_ID,
+                message.document.file_id,
+                caption=user_info + (f"📝 {message.caption}\n\n" if message.caption else "") +
+                f"<i>Ответить: /reply {user_id}</i>",
+                parse_mode="HTML"
+            )
+        elif message.video:
+            await bot.send_video(
+                ADMIN_USER_ID,
+                message.video.file_id,
+                caption=user_info + (f"📝 {message.caption}\n\n" if message.caption else "") +
+                f"<i>Ответить: /reply {user_id}</i>",
+                parse_mode="HTML"
+            )
+        elif message.voice:
+            await bot.send_voice(
+                ADMIN_USER_ID,
+                message.voice.file_id,
+                caption=user_info + f"<i>Ответить: /reply {user_id}</i>",
+                parse_mode="HTML"
+            )
+        elif message.audio:
+            await bot.send_audio(
+                ADMIN_USER_ID,
+                message.audio.file_id,
+                caption=user_info + (f"📝 {message.caption}\n\n" if message.caption else "") +
+                f"<i>Ответить: /reply {user_id}</i>",
+                parse_mode="HTML"
+            )
+        
+        await message.answer(
+            "✅ Ваше сообщение отправлено!\n"
+            "Ожидайте ответа от поддержки.",
+            reply_markup=get_back_keyboard()
+        )
+    except Exception as e:
+        await message.answer(
+            "❌ Ошибка при отправке сообщения.\n"
+            "Попробуйте позже.",
+            reply_markup=get_back_keyboard()
+        )
+
+
+@dp.message_handler(commands=['reply'])
+async def cmd_reply_start(message: types.Message, state: FSMContext):
+    """Админ начинает ответ пользователю"""
+    if not is_admin(message.from_user.id):
+        return
+    
+    # Проверяем формат команды: /reply USER_ID
+    parts = message.text.split(maxsplit=1)
+    
+    if len(parts) == 1:
+        await message.answer(
+            "📝 <b>Ответ пользователю</b>\n\n"
+            "Использование:\n"
+            "<code>/reply USER_ID</code>\n\n"
+            "Затем отправьте текст ответа.",
+            parse_mode="HTML"
+        )
+        await AdminReply.waiting_user_id.set()
+        return
+    
+    # Если указан сразу USER_ID
+    try:
+        user_id = int(parts[1])
+        await message.answer(
+            f"✉️ <b>Отправка ответа пользователю {user_id}</b>\n\n"
+            f"Напишите текст ответа:",
+            parse_mode="HTML"
+        )
+        await state.update_data(reply_to_user_id=user_id)
+        await AdminReply.waiting_message.set()
+    except ValueError:
+        await message.answer("❌ Неверный формат USER_ID. Должно быть число.")
+
+
+@dp.message_handler(state=AdminReply.waiting_user_id)
+async def process_reply_user_id(message: types.Message, state: FSMContext):
+    """Админ указал ID пользователя"""
+    try:
+        user_id = int(message.text.strip())
+        await state.update_data(reply_to_user_id=user_id)
+        await message.answer(
+            f"✉️ <b>Отправка ответа пользователю {user_id}</b>\n\n"
+            f"Напишите текст ответа:",
+            parse_mode="HTML"
+        )
+        await AdminReply.waiting_message.set()
+    except ValueError:
+        await message.answer(
+            "❌ Неверный формат. Введите числовой ID пользователя:"
+        )
+
+
+@dp.message_handler(state=AdminReply.waiting_message, content_types=['text', 'photo', 'document', 'video'])
+async def process_reply_message(message: types.Message, state: FSMContext):
+    """Админ отправил ответ пользователю"""
+    data = await state.get_data()
+    user_id = data.get('reply_to_user_id')
+    
+    if not user_id:
+        await message.answer("❌ Ошибка: ID пользователя не найден")
+        await state.finish()
+        return
+    
+    try:
+        # Отправляем ответ пользователю
+        if message.text:
+            await bot.send_message(
+                user_id,
+                f"💬 <b>Ответ от поддержки:</b>\n\n{message.text}",
+                parse_mode="HTML"
+            )
+        elif message.photo:
+            await bot.send_photo(
+                user_id,
+                message.photo[-1].file_id,
+                caption=f"💬 <b>Ответ от поддержки:</b>\n\n{message.caption or ''}",
+                parse_mode="HTML"
+            )
+        elif message.document:
+            await bot.send_document(
+                user_id,
+                message.document.file_id,
+                caption=f"💬 <b>Ответ от поддержки:</b>\n\n{message.caption or ''}",
+                parse_mode="HTML"
+            )
+        elif message.video:
+            await bot.send_video(
+                user_id,
+                message.video.file_id,
+                caption=f"💬 <b>Ответ от поддержки:</b>\n\n{message.caption or ''}",
+                parse_mode="HTML"
+            )
+        
+        await message.answer(
+            f"✅ Ответ отправлен пользователю <code>{user_id}</code>",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await message.answer(
+            f"❌ Ошибка при отправке: {str(e)}\n\n"
+            f"Возможно, пользователь заблокировал бота."
+        )
+    
+    await state.finish()
 
 
 @dp.message_handler(lambda m: m.text == ABOUT_TEXT)

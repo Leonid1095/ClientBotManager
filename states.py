@@ -28,6 +28,17 @@ class StatusForm(StatesGroup):
 	order_id = State()
 
 
+class SupportChat(StatesGroup):
+	"""Состояние для чата поддержки"""
+	waiting_message = State()
+
+
+class AdminReply(StatesGroup):
+	"""Состояние для ответа админа пользователю"""
+	waiting_user_id = State()
+	waiting_message = State()
+
+
 class CalcState(StatesGroup):
 	type_bot = State()
 	complexity = State()
