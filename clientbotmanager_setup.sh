@@ -88,8 +88,10 @@ WorkingDirectory=$BOT_DIR
 ExecStart=$BOT_DIR/venv/bin/python $BOT_DIR/bot.py
 Restart=always
 RestartSec=10
-StandardOutput=append:$BOT_DIR/clientbotmanager.log
-StandardError=append:$BOT_DIR/clientbotmanager_error.log
+Environment=PYTHONUNBUFFERED=1
+SyslogIdentifier=ClientBotManager
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -138,10 +140,10 @@ case "$1" in
         sudo systemctl status $SERVICE_NAME.service
         ;;
     logs)
-        tail -f $BOT_DIR/clientbotmanager.log
+        journalctl -u $SERVICE_NAME.service -o short-iso -f
         ;;
     errors)
-        tail -f $BOT_DIR/clientbotmanager_error.log
+        journalctl -u $SERVICE_NAME.service -o short-iso -f
         ;;
     update)
         cd $BOT_DIR

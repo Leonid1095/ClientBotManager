@@ -19,8 +19,9 @@ from reviews import REVIEWS
 from calc import calculate_price
 from data import save_ticket, get_ticket_status
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+# Настройка логирования (красивый формат)
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
 
 # Инициализация бота и диспетчера
 bot = Bot(token=TELEGRAM_TOKEN)
