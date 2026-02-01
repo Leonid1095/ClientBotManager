@@ -416,32 +416,28 @@ async def create_backup_now() -> str:
         return "❌ Ошибка при создании бекапа"
 
 
-@dp.message_handler(commands=['admin_panel'])
-async def cmd_admin_panel(message: types.Message):
-    """Открыть админ-панель для управления контентом"""
+@dp.message_handler(commands=['admin'])
+async def cmd_admin(message: types.Message):
+    """Открыть настройки администратора"""
     if not is_admin(message.from_user.id):
         await message.answer("⛔️ Эта команда доступна только администратору.")
         return
     
-    from admin_panel import admin_menu
+    # Создаем главное админ-меню
+    msg = await message.answer("⏳ Загрузка панели администратора...")
     
-    # Создаем первое сообщение
-    msg = await message.answer("⏳ Загрузка админ-панели...")
-    
-    # Меняем его на админ-панель
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton("📦 Портфолио", callback_data="admin_portfolio_menu"),
-        InlineKeyboardButton("❓ FAQ", callback_data="admin_faq_menu"),
-        InlineKeyboardButton("📞 Контакты", callback_data="admin_contacts_menu"),
-        InlineKeyboardButton("👤 О себе", callback_data="admin_about_menu"),
-        InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
+        InlineKeyboardButton("📝 Управление контентом", callback_data="admin_content_menu"),
+        InlineKeyboardButton("💾 Управление бекапами", callback_data="admin_backup_menu"),
+        InlineKeyboardButton("⭐ Модерация отзывов", callback_data="admin_reviews_menu"),
+        InlineKeyboardButton("📊 Общая статистика", callback_data="admin_main_stats"),
         InlineKeyboardButton("❌ Закрыть", callback_data="admin_close")
     )
     
-    text = """⚙️ <b>АДМИН-ПАНЕЛЬ</b>
+    text = """⚙️ <b>НАСТРОЙКИ АДМИНИСТРАТОРА</b>
 
-Выбери раздел для редактирования:"""
+Выбери раздел:"""
     
     await msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
@@ -724,6 +720,133 @@ async def cmd_reviews_pending(message: types.Message):
     else:
         await message.answer(text, parse_mode="HTML")
 
+
+# ==============================================
+# ОБРАБОТЧИКИ АДМИН-ПАНЕЛИ
+# ==============================================
+
+@dp.callback_query_handler(lambda c: c.data == "admin_backup_create")
+async def admin_backup_create_callback(callback_query: types.CallbackQuery):
+    """Создать бекап из админ-панели"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔️ Доступ запрещён", show_alert=True)
+        return
+    
+    await callback_query.message.edit_text("⏳ Создаю бекап...")
+    result = await create_backup_now()
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data="admin_backup_menu"))
+    
+    await callback_query.message.edit_text(result, reply_markup=keyboard)
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "admin_backup_list")
+async def admin_backup_list_callback(callback_query: types.CallbackQuery):
+    """Список бекапов из админ-панели"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔️ Доступ запрещён", show_alert=True)
+        return
+    
+    backups = backup_manager.list_backups()
+    
+    if not backups:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data="admin_backup_menu"))
+        await callback_query.message.edit_text("📂 Бекапы не найдены.", reply_markup=keyboard)
+        return
+    
+    text = "📂 <b>Список бекапов:</b>\n\n"
+    
+    for i, backup in enumerate(backups[:10], 1):
+        filename = backup['filename']
+        size_kb = backup['size_kb']
+        metadata = backup.get('metadata', {})
+        
+        text += f"{i}. <code>{filename}</code>\n"
+        text += f"   Размер: {size_kb} KB\n"
+        
+        if metadata:
+            created = metadata.get('created_at', 'неизвестно')
+            text += f"   Создан: {created}\n"
+        
+        text += "\n"
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data="admin_backup_menu"))
+    
+    await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "admin_backup_settings")
+async def admin_backup_settings_callback(callback_query: types.CallbackQuery):
+    """Настройки бекапов из админ-панели"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔️ Доступ запрещён", show_alert=True)
+        return
+    
+    status = "✅ Включены" if BACKUP_ENABLED else "❌ Выключены"
+    
+    text = f"""⚙️ <b>НАСТРОЙКИ БЕКАПОВ</b>
+
+<b>Статус:</b> {status}
+<b>Интервал:</b> {BACKUP_INTERVAL_DAYS} дней
+<b>Хранить:</b> {BACKUP_KEEP_COUNT} последних бекапов
+<b>Директория:</b> <code>{BACKUP_DIR}</code>
+
+<i>Для изменения настроек отредактируй config.py</i>"""
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data="admin_backup_menu"))
+    
+    await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+    await callback_query.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "admin_reviews_pending")
+async def admin_reviews_pending_callback(callback_query: types.CallbackQuery):
+    """Модерация отзывов из админ-панели"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔️ Доступ запрещён", show_alert=True)
+        return
+    
+    if not PENDING_REVIEWS:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data="admin_reviews_menu"))
+        await callback_query.message.edit_text(
+            "✅ Нет отзывов на модерации!", 
+            reply_markup=keyboard
+        )
+        return
+    
+    first_review = PENDING_REVIEWS[0]
+    stars = get_rating_stars(first_review["rating"])
+    
+    text = f"""📝 <b>Отзыв на модерации</b> (1 из {len(PENDING_REVIEWS)})
+
+<b>Автор:</b> {first_review['author']}
+<b>Рейтинг:</b> {stars}
+<b>Текст:</b>
+{first_review['text']}
+
+Одобрить или отклонить?"""
+    
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("✅ Одобрить", callback_data=f"approve_review_{first_review['id']}"),
+        InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_review_{first_review['id']}"),
+        InlineKeyboardButton("🔙 Назад", callback_data="admin_reviews_menu")
+    )
+    
+    await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    await callback_query.answer()
+
+
+# ==============================================
+# СТАТУС ЗАКАЗА
+# ==============================================
 
 @dp.callback_query_handler(lambda c: c.data == "status_by_id")
 async def status_by_id(callback_query: types.CallbackQuery):
@@ -1134,11 +1257,7 @@ async def on_startup(dp):
     commands = [
         BotCommand(command="start", description="🚀 Главное меню"),
         BotCommand(command="menu", description="🏠 Вернуться в меню"),
-        BotCommand(command="admin_panel", description="⚙️ Админ-панель (админ)"),
-        BotCommand(command="backup", description="💾 Создать бекап (админ)"),
-        BotCommand(command="backup_list", description="📂 Список бекапов (админ)"),
-        BotCommand(command="backup_settings", description="⚙️ Настройки бекапов (админ)"),
-        BotCommand(command="reviews_pending", description="📝 Модерация отзывов (админ)"),
+        BotCommand(command="admin", description="⚙️ Настройки администратора"),
     ]
     await bot.set_my_commands(commands)
     logging.info("✅ Команды зарегистрированы в меню Telegram")

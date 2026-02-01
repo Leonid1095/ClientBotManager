@@ -58,8 +58,110 @@ class AdminAbout(StatesGroup):
 
 # ==================== ГЛАВНОЕ МЕНЮ АДМИН-ПАНЕЛИ ====================
 
+# ==================== ГЛАВНОЕ МЕНЮ АДМИН-ПАНЕЛИ ====================
+
+async def admin_main_menu(call: types.CallbackQuery):
+    """Главное меню администратора"""
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("📝 Управление контентом", callback_data="admin_content_menu"),
+        InlineKeyboardButton("💾 Управление бекапами", callback_data="admin_backup_menu"),
+        InlineKeyboardButton("⭐ Модерация отзывов", callback_data="admin_reviews_menu"),
+        InlineKeyboardButton("📊 Общая статистика", callback_data="admin_main_stats"),
+        InlineKeyboardButton("❌ Закрыть", callback_data="admin_close")
+    )
+    
+    text = """⚙️ <b>НАСТРОЙКИ АДМИНИСТРАТОРА</b>
+
+Выбери раздел:"""
+    
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+async def admin_content_menu(call: types.CallbackQuery):
+    """Меню управления контентом"""
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("📦 Портфолио", callback_data="admin_portfolio_menu"),
+        InlineKeyboardButton("❓ FAQ", callback_data="admin_faq_menu"),
+        InlineKeyboardButton("📞 Контакты", callback_data="admin_contacts_menu"),
+        InlineKeyboardButton("👤 О себе", callback_data="admin_about_menu"),
+        InlineKeyboardButton("📊 Статистика контента", callback_data="admin_stats"),
+        InlineKeyboardButton("🔙 Главное меню", callback_data="admin_main_menu")
+    )
+    
+    text = """📝 <b>УПРАВЛЕНИЕ КОНТЕНТОМ</b>
+
+Выбери раздел для редактирования:"""
+    
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+async def admin_backup_menu(call: types.CallbackQuery):
+    """Меню управления бекапами"""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("💾 Создать бекап сейчас", callback_data="admin_backup_create"),
+        InlineKeyboardButton("📂 Список бекапов", callback_data="admin_backup_list"),
+        InlineKeyboardButton("⚙️ Настройки бекапов", callback_data="admin_backup_settings"),
+        InlineKeyboardButton("🔙 Главное меню", callback_data="admin_main_menu")
+    )
+    
+    text = """💾 <b>УПРАВЛЕНИЕ БЕКАПАМИ</b>
+
+Выбери действие:"""
+    
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+async def admin_reviews_menu(call: types.CallbackQuery):
+    """Меню модерации отзывов"""
+    from reviews import PENDING_REVIEWS
+    
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton(f"📝 Ожидают модерации ({len(PENDING_REVIEWS)})", callback_data="admin_reviews_pending"),
+        InlineKeyboardButton("🔙 Главное меню", callback_data="admin_main_menu")
+    )
+    
+    text = f"""⭐ <b>МОДЕРАЦИЯ ОТЗЫВОВ</b>
+
+Отзывов на модерации: {len(PENDING_REVIEWS)}"""
+    
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+async def admin_main_stats(call: types.CallbackQuery):
+    """Общая статистика системы"""
+    from reviews import PENDING_REVIEWS
+    from data import TICKETS_DB, REFERRALS_DB, BONUSES_DB
+    
+    content_stats = content_manager.get_stats()
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("🔙 Главное меню", callback_data="admin_main_menu"))
+    
+    text = f"""📊 <b>ОБЩАЯ СТАТИСТИКА</b>
+
+<b>📝 Контент:</b>
+• Кейсов в портфолио: {content_stats['portfolio_count']}
+• Вопросов в FAQ: {content_stats['faq_count']}
+
+<b>📦 Заказы:</b>
+• Всего заявок: {len(TICKETS_DB)}
+
+<b>👥 Пользователи:</b>
+• Всего рефералов: {sum(len(refs) for refs in REFERRALS_DB.values())}
+• Начислено бонусов: {sum(BONUSES_DB.values())} ₽
+
+<b>⭐ Отзывы:</b>
+• На модерации: {len(PENDING_REVIEWS)}"""
+    
+    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
 async def admin_menu(message: types.Message):
-    """Главное меню админ-панели"""
+    """Главное меню админ-панели (устаревший метод для совместимости)"""
     if message.from_user.id != ADMIN_USER_ID:
         await message.reply("❌ Доступ запрещён")
         return
@@ -553,27 +655,13 @@ async def admin_stats(call: types.CallbackQuery):
 # ==================== UTILITY CALLBACKS ====================
 
 async def admin_back_callback(call: types.CallbackQuery):
-    """Вернуться в главное меню"""
-    await admin_menu(call.message)
+    """Вернуться в меню контента"""
+    await admin_content_menu(call)
 
 
 async def admin_menu_back_callback(call: types.CallbackQuery):
-    """Вернуться в главное меню админ-панели"""
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📦 Портфолио", callback_data="admin_portfolio_menu"),
-        InlineKeyboardButton("❓ FAQ", callback_data="admin_faq_menu"),
-        InlineKeyboardButton("📞 Контакты", callback_data="admin_contacts_menu"),
-        InlineKeyboardButton("👤 О себе", callback_data="admin_about_menu"),
-        InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
-        InlineKeyboardButton("❌ Закрыть", callback_data="admin_close")
-    )
-    
-    text = """⚙️ <b>АДМИН-ПАНЕЛЬ</b>
-
-Выбери раздел для редактирования:"""
-    
-    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    """Вернуться в главное меню администратора"""
+    await admin_main_menu(call)
 
 
 async def admin_close_callback(call: types.CallbackQuery):
@@ -587,7 +675,11 @@ def register_admin_handlers(dp: Dispatcher):
     """Регистрация всех обработчиков админ-панели"""
     
     # Главное меню
-    dp.register_callback_query_handler(admin_menu, text="admin_menu", state="*")
+    dp.register_callback_query_handler(admin_main_menu, text="admin_main_menu", state="*")
+    dp.register_callback_query_handler(admin_content_menu, text="admin_content_menu", state="*")
+    dp.register_callback_query_handler(admin_backup_menu, text="admin_backup_menu", state="*")
+    dp.register_callback_query_handler(admin_reviews_menu, text="admin_reviews_menu", state="*")
+    dp.register_callback_query_handler(admin_main_stats, text="admin_main_stats", state="*")
     
     # Портфолио
     dp.register_callback_query_handler(portfolio_menu, text="admin_portfolio_menu", state="*")
